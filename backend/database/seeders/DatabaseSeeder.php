@@ -17,5 +17,11 @@ class DatabaseSeeder extends Seeder
                 ['name' => ucfirst($role), 'password' => 'password', 'role' => $role]
             );
         }
+
+        $this->call([
+            RoleSeeder::class,
+            CategorySeeder::class,
+            ToolSeeder::class,
+        ]);
     }
 }
