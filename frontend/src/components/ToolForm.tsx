@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { apiFetch, ValidationErrors } from "@/lib/api";
 import { Category, Difficulty, DIFFICULTY_LABELS, Role, Tool } from "@/lib/types";
 import Card from "@/components/Card";
+import { useToast } from "@/context/ToastContext";
 
-const inputClass = "mt-1 w-full border rounded px-3 py-2";
+const inputClass = "input mt-1";
 
 // Етикет + поле + съобщение за грешка под него
 function Field({ label, required, error, hint, children }: {
@@ -18,12 +19,12 @@ function Field({ label, required, error, hint, children }: {
 }) {
   return (
     <div className="block text-sm">
-      <span className="font-medium">
-        {label} {required && <span className="text-red-600">*</span>}
+      <span className="font-medium text-slate-700">
+        {label} {required && <span className="text-red-600" aria-label="задължително">*</span>}
       </span>
       {children}
-      {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+      {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
     </div>
   );
 }
@@ -31,6 +32,7 @@ function Field({ label, required, error, hint, children }: {
 // Добавяне на нов инструмент (без tool) или редакция на съществуващ (с tool)
 export default function ToolForm({ tool }: { tool?: Tool }) {
   const router = useRouter();
+  const toast = useToast();
 
   // Списъци за избор, зареждат се от API-то
   const [roles, setRoles] = useState<Role[]>([]);
@@ -157,6 +159,12 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
         setErrors({ general: [data.message ?? `Грешка ${res.status}`] });
         return;
       }
+      // Новите предложения (освен от owner) чакат одобрение от администратор
+      if (data.data.status === "pending") {
+        toast.info(tool ? "Промените са запазени. Инструментът чака одобрение." : "Инструментът е изпратен за одобрение от администратор.");
+      } else {
+        toast.success(tool ? "Промените са запазени." : "Инструментът е публикуван.");
+      }
       router.push(`/tools/${data.data.id}`);
     } catch {
       setErrors({ general: ["Няма връзка с бекенда."] });
@@ -170,7 +178,7 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {allErrors.length > 0 && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded p-3 text-sm">
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           <p className="font-medium">Моля, поправете следното:</p>
           <ul className="list-disc ml-5">
             {allErrors.map((m, i) => (
@@ -181,7 +189,7 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
       )}
 
       <Card className="space-y-4">
-        <h2 className="font-semibold">Основна информация</h2>
+        <h2 className="font-semibold text-slate-900">Основна информация</h2>
         <Field label="Име" required error={err("name")}>
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required maxLength={255} />
         </Field>
@@ -200,13 +208,13 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
       </Card>
 
       <Card className="space-y-4">
-        <h2 className="font-semibold">Роли, категории и тагове</h2>
+        <h2 className="font-semibold text-slate-900">Роли, категории и тагове</h2>
 
         <Field label="Препоръчителни роли" required error={err("role_ids")}>
           <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
             {roles.map((role) => (
-              <label key={role.id} className="flex items-center gap-2">
-                <input type="checkbox" checked={roleIds.includes(role.id)} onChange={() => { setRoleIds(toggle(roleIds, role.id)); clearError("role_ids"); }} />
+              <label key={role.id} className="flex items-center gap-2 text-slate-700">
+                <input type="checkbox" className="h-4 w-4 rounded border-slate-300 accent-indigo-600" checked={roleIds.includes(role.id)} onChange={() => { setRoleIds(toggle(roleIds, role.id)); clearError("role_ids"); }} />
                 {role.name}
               </label>
             ))}
@@ -216,15 +224,15 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
         <Field label="Категории" required error={err("category_ids")}>
           <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
             {categories.map((cat) => (
-              <label key={cat.id} className="flex items-center gap-2">
-                <input type="checkbox" checked={categoryIds.includes(cat.id)} onChange={() => { setCategoryIds(toggle(categoryIds, cat.id)); clearError("category_ids"); }} />
+              <label key={cat.id} className="flex items-center gap-2 text-slate-700">
+                <input type="checkbox" className="h-4 w-4 rounded border-slate-300 accent-indigo-600" checked={categoryIds.includes(cat.id)} onChange={() => { setCategoryIds(toggle(categoryIds, cat.id)); clearError("category_ids"); }} />
                 {cat.name}
               </label>
             ))}
           </div>
           <div className="mt-3 flex gap-2">
             <input
-              className="flex-1 border rounded px-3 py-1.5"
+              className="input flex-1"
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               onKeyDown={(e) => {
@@ -235,7 +243,7 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
               }}
               placeholder="Нова категория..."
             />
-            <button type="button" onClick={addCategory} className="border rounded px-3 py-1.5 hover:bg-gray-50">
+            <button type="button" onClick={addCategory} className="btn-secondary shrink-0">
               + Добави
             </button>
           </div>
@@ -248,7 +256,7 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
       </Card>
 
       <Card className="space-y-4">
-        <h2 className="font-semibold">Примери и документация</h2>
+        <h2 className="font-semibold text-slate-900">Примери и документация</h2>
         <Field label="Реални примери" error={err("examples")}>
           <textarea className={inputClass} rows={3} value={examples} onChange={(e) => setExamples(e.target.value)} />
         </Field>
@@ -259,17 +267,17 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
               <div key={i} className="flex gap-2">
                 <input
                   type="url"
-                  className="flex-1 border rounded px-3 py-1.5"
+                  className="input flex-1"
                   value={link}
                   onChange={(e) => setExampleLinks(exampleLinks.map((l, j) => (j === i ? e.target.value : l)))}
                   placeholder="https://..."
                 />
-                <button type="button" onClick={() => setExampleLinks(exampleLinks.filter((_, j) => j !== i))} className="text-red-600 px-2">
+                <button type="button" onClick={() => setExampleLinks(exampleLinks.filter((_, j) => j !== i))} className="px-2 text-red-700" aria-label="Премахни линка">
                   ✕
                 </button>
               </div>
             ))}
-            <button type="button" onClick={() => setExampleLinks([...exampleLinks, ""])} className="text-blue-600 text-sm hover:underline">
+            <button type="button" onClick={() => setExampleLinks([...exampleLinks, ""])} className="text-sm font-medium text-indigo-700 hover:underline">
               + Добави линк
             </button>
           </div>
@@ -281,15 +289,15 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
       </Card>
 
       <Card className="space-y-4">
-        <h2 className="font-semibold">Изображения</h2>
+        <h2 className="font-semibold text-slate-900">Изображения</h2>
         {tool && tool.images.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {tool.images.map((img) => (
               <label key={img.id} className={`block text-xs ${removeImageIds.includes(img.id) ? "opacity-40" : ""}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.url} alt="" className="w-full h-24 object-cover rounded border" />
+                <img src={img.url} alt="" className="h-24 w-full rounded-lg border border-slate-200 object-cover" />
                 <span className="flex items-center gap-1 mt-1">
-                  <input type="checkbox" checked={removeImageIds.includes(img.id)} onChange={() => setRemoveImageIds(toggle(removeImageIds, img.id))} />
+                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 accent-indigo-600" checked={removeImageIds.includes(img.id)} onChange={() => setRemoveImageIds(toggle(removeImageIds, img.id))} />
                   Премахни
                 </span>
               </label>
@@ -301,14 +309,14 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
             type="file"
             multiple
             accept="image/jpeg,image/png,image/webp,image/gif"
-            className="mt-1 block text-sm"
+            className="mt-1 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
             onChange={(e) => setImages(Array.from(e.target.files ?? []))}
           />
         </Field>
       </Card>
 
       <Card className="space-y-4">
-        <h2 className="font-semibold">Допълнително (по желание)</h2>
+        <h2 className="font-semibold text-slate-900">Допълнително (по желание)</h2>
         <Field label="Видео ресурс (линк)" error={err("video_url")}>
           <input type="url" className={inputClass} value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/..." />
         </Field>
@@ -324,11 +332,11 @@ export default function ToolForm({ tool }: { tool?: Tool }) {
         </Field>
       </Card>
 
-      <div className="flex gap-3">
-        <button type="submit" disabled={saving} className="bg-blue-600 text-white rounded px-5 py-2 hover:bg-blue-700 disabled:opacity-50">
+      <div className="flex flex-col-reverse gap-3 sm:flex-row">
+        <button type="submit" disabled={saving} className="btn-primary">
           {saving ? "Запазване..." : tool ? "Запази промените" : "Добави инструмента"}
         </button>
-        <button type="button" onClick={() => router.back()} className="border rounded px-5 py-2 hover:bg-gray-50">
+        <button type="button" onClick={() => router.back()} className="btn-secondary">
           Отказ
         </button>
       </div>

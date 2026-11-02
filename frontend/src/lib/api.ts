@@ -8,6 +8,8 @@ export type User = {
   name: string;
   email: string;
   role: string;
+  two_factor_enabled: boolean;
+  created_at?: string;
 };
 
 // Laravel записва CSRF токена в бисквитката XSRF-TOKEN.
@@ -35,6 +37,49 @@ export function apiFetch(path: string, options: RequestInit = {}) {
 
 // Грешките от валидацията на Laravel: { "name": ["Полето е задължително."], ... }
 export type ValidationErrors = Record<string, string[]>;
+
+// Грешка от API-то: status (напр. 403, 422), съобщение и грешките по полета
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public errors: ValidationErrors = {},
+  ) {
+    super(message);
+  }
+
+  // Първото съобщение за грешка (удобно за toast)
+  get firstMessage(): string {
+    return Object.values(this.errors)[0]?.[0] ?? this.message;
+  }
+}
+
+/**
+ * Заявка, която връща JSON или хвърля ApiError.
+ * Пример: const tools = await apiJson<Paginated<Tool>>("/api/tools");
+ */
+export async function apiJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await apiFetch(path, options);
+  } catch {
+    throw new ApiError(0, "Няма връзка със сървъра.");
+  }
+
+  if (res.status === 204) return undefined as T;
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fallback: Record<number, string> = {
+      401: "Моля, влезте в профила си.",
+      403: "Нямате права за това действие.",
+      404: "Не е намерено.",
+      429: "Твърде много заявки. Опитайте след малко.",
+    };
+    throw new ApiError(res.status, data.message || fallback[res.status] || `Грешка ${res.status}`, data.errors ?? {});
+  }
+  return data as T;
+}
 
 // Връща влезлия потребител или null, ако няма активна сесия.
 export async function getUser(): Promise<User | null> {

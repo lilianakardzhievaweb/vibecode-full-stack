@@ -1,37 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { useSearchParams } from "next/navigation";
+import { apiJson } from "@/lib/api";
 import { Category, Paginated, Role, Tag, Tool } from "@/lib/types";
 import { useUser } from "@/hooks/useUser";
-import Card from "@/components/Card";
-import Badge from "@/components/Badge";
+import ToolCard from "@/components/ToolCard";
+import { EmptyState, Loading } from "@/components/States";
 
-const selectClass = "border rounded px-3 py-2 bg-white";
-
-export default function ToolsPage() {
+function ToolsList() {
   const { user } = useUser({ redirectToLogin: true });
+  const searchParams = useSearchParams();
 
   // Списъци за филтрите
   const [roles, setRoles] = useState<Role[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
 
-  // Избрани филтри
-  const [search, setSearch] = useState("");
-  const [role, setRole] = useState("");
-  const [category, setCategory] = useState("");
-  const [tag, setTag] = useState("");
+  // Избрани филтри (началните стойности идват от адреса, напр. /tools?role=qa)
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [role, setRole] = useState(searchParams.get("role") ?? "");
+  const [category, setCategory] = useState(searchParams.get("category") ?? "");
+  const [tag, setTag] = useState(searchParams.get("tag") ?? "");
+  const [sort, setSort] = useState(searchParams.get("sort") ?? "latest");
   const [page, setPage] = useState(1);
+  const [showFilters, setShowFilters] = useState(false);
 
   const [result, setResult] = useState<Paginated<Tool> | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!user) return;
-    apiFetch("/api/roles").then((r) => r.json()).then(setRoles);
-    apiFetch("/api/categories").then((r) => r.json()).then(setCategories);
-    apiFetch("/api/tags").then((r) => r.json()).then(setTags);
+    apiJson<Role[]>("/api/roles").then(setRoles).catch(() => {});
+    apiJson<Category[]>("/api/categories").then(setCategories).catch(() => {});
+    apiJson<Tag[]>("/api/tags").then(setTags).catch(() => {});
   }, [user]);
 
   // Зареждаме инструментите при всяка промяна на филтрите.
@@ -40,19 +43,22 @@ export default function ToolsPage() {
   useEffect(() => {
     if (!user) return;
     let ignore = false;
-    const params = new URLSearchParams({ search, role, category, tag, page: String(page) });
+    const params = new URLSearchParams({ search, role, category, tag, sort, page: String(page) });
     const timer = setTimeout(() => {
-      apiFetch(`/api/tools?${params}`)
-        .then((r) => r.json())
+      apiJson<Paginated<Tool>>(`/api/tools?${params}`)
         .then((data) => {
-          if (!ignore) setResult(data);
-        });
+          if (!ignore) {
+            setResult(data);
+            setError("");
+          }
+        })
+        .catch((e) => !ignore && setError(e.message));
     }, 300);
     return () => {
       ignore = true;
       clearTimeout(timer);
     };
-  }, [user, search, role, category, tag, page]);
+  }, [user, search, role, category, tag, sort, page]);
 
   // При смяна на филтър се връщаме на първа страница
   function filter(setter: (v: string) => void) {
@@ -62,94 +68,164 @@ export default function ToolsPage() {
     };
   }
 
-  if (!user) return <p className="text-center text-gray-500 py-16">Зареждане...</p>;
+  function clearFilters() {
+    setSearch("");
+    setRole("");
+    setCategory("");
+    setTag("");
+    setPage(1);
+  }
+
+  const activeFilters = [search, role, category, tag].filter(Boolean).length;
+
+  if (!user) return <Loading />;
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8 space-y-6 text-gray-900">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">AI инструменти</h1>
-        <Link href="/tools/new" className="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">
+    <main className="page space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="page-title">AI инструменти</h1>
+          <p className="mt-1 text-sm text-slate-600">Одобрени инструменти, споделени от екипа.</p>
+        </div>
+        <Link href="/tools/new" className="btn-primary">
           + Добави инструмент
         </Link>
       </div>
 
-      <Card className="grid gap-3 sm:grid-cols-4">
-        <input
-          className="border rounded px-3 py-2"
-          placeholder="Търси по име..."
-          value={search}
-          onChange={(e) => filter(setSearch)(e.target.value)}
-        />
-        <select className={selectClass} value={role} onChange={(e) => filter(setRole)(e.target.value)}>
-          <option value="">Всички роли</option>
-          {roles.map((r) => (
-            <option key={r.id} value={r.slug}>{r.name}</option>
-          ))}
-        </select>
-        <select className={selectClass} value={category} onChange={(e) => filter(setCategory)(e.target.value)}>
-          <option value="">Всички категории</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.slug}>{c.name}</option>
-          ))}
-        </select>
-        <select className={selectClass} value={tag} onChange={(e) => filter(setTag)(e.target.value)}>
-          <option value="">Всички тагове</option>
-          {tags.map((t) => (
-            <option key={t.id} value={t.slug}>#{t.name}</option>
-          ))}
-        </select>
-      </Card>
+      <section aria-label="Филтри" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex gap-2">
+          <label htmlFor="search" className="sr-only">
+            Търсене
+          </label>
+          <input
+            id="search"
+            type="search"
+            className="input"
+            placeholder="Търси по име или описание..."
+            value={search}
+            onChange={(e) => filter(setSearch)(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className="btn-secondary shrink-0 md:hidden"
+            aria-expanded={showFilters}
+            aria-controls="filter-fields"
+          >
+            Филтри{activeFilters > 0 && ` (${activeFilters})`}
+          </button>
+        </div>
 
-      {!result ? (
-        <p className="text-gray-500">Зареждане...</p>
+        {/* На мобилен филтрите се показват при натискане на бутона */}
+        <div id="filter-fields" className={`mt-3 grid gap-3 sm:grid-cols-2 md:grid md:grid-cols-4 ${showFilters ? "grid" : "hidden"}`}>
+          <div>
+            <label htmlFor="f-role" className="label">
+              Роля
+            </label>
+            <select id="f-role" className="input" value={role} onChange={(e) => filter(setRole)(e.target.value)}>
+              <option value="">Всички роли</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.slug}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-category" className="label">
+              Категория
+            </label>
+            <select id="f-category" className="input" value={category} onChange={(e) => filter(setCategory)(e.target.value)}>
+              <option value="">Всички категории</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-tag" className="label">
+              Таг
+            </label>
+            <select id="f-tag" className="input" value={tag} onChange={(e) => filter(setTag)(e.target.value)}>
+              <option value="">Всички тагове</option>
+              {tags.map((t) => (
+                <option key={t.id} value={t.slug}>
+                  #{t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-sort" className="label">
+              Подреди по
+            </label>
+            <select id="f-sort" className="input" value={sort} onChange={(e) => filter(setSort)(e.target.value)}>
+              <option value="latest">Най-нови</option>
+              <option value="rating">Най-високо оценени</option>
+              <option value="name">Име (А-Я)</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {error ? (
+        <EmptyState title="Грешка при зареждане">{error}</EmptyState>
+      ) : !result ? (
+        <Loading />
       ) : result.data.length === 0 ? (
-        <p className="text-gray-500">Няма намерени инструменти.</p>
+        <EmptyState title="Няма намерени инструменти.">
+          {activeFilters > 0 ? (
+            <button onClick={clearFilters} className="text-indigo-700 hover:underline">
+              Изчисти филтрите
+            </button>
+          ) : (
+            <Link href="/tools/new" className="text-indigo-700 hover:underline">
+              Добави първия инструмент
+            </Link>
+          )}
+        </EmptyState>
       ) : (
         <>
-          <p className="text-sm text-gray-500">Намерени: {result.meta.total}</p>
+          <div className="flex items-center justify-between text-sm text-slate-600">
+            <p>Намерени: {result.meta.total}</p>
+            {activeFilters > 0 && (
+              <button onClick={clearFilters} className="text-indigo-700 hover:underline">
+                Изчисти филтрите
+              </button>
+            )}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {result.data.map((tool) => (
-              <Card key={tool.id} href={`/tools/${tool.id}`} className="space-y-2">
-                {tool.images[0] && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={tool.images[0].url} alt="" className="w-full h-32 object-cover rounded" />
-                )}
-                <h2 className="font-semibold">{tool.name}</h2>
-                <p className="text-sm text-gray-600 line-clamp-2">{tool.description}</p>
-                <div className="flex flex-wrap gap-1">
-                  {tool.categories.map((c) => (
-                    <Badge key={c.id} color="blue">{c.name}</Badge>
-                  ))}
-                  {tool.roles.map((r) => (
-                    <Badge key={r.id} color="green">{r.name}</Badge>
-                  ))}
-                </div>
-                {tool.tags.length > 0 && (
-                  <p className="text-xs text-gray-500">{tool.tags.map((t) => `#${t.name}`).join(" ")}</p>
-                )}
-              </Card>
+              <ToolCard key={tool.id} tool={tool} />
             ))}
           </div>
 
           {result.meta.last_page > 1 && (
-            <div className="flex items-center justify-center gap-4">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="border rounded px-3 py-1 disabled:opacity-40">
+            <nav aria-label="Страници" className="flex items-center justify-center gap-4">
+              <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="btn-secondary">
                 ← Предишна
               </button>
-              <span className="text-sm">
-                Страница {result.meta.current_page} от {result.meta.last_page}
+              <span className="text-sm text-slate-600">
+                {result.meta.current_page} / {result.meta.last_page}
               </span>
-              <button
-                disabled={page >= result.meta.last_page}
-                onClick={() => setPage(page + 1)}
-                className="border rounded px-3 py-1 disabled:opacity-40"
-              >
+              <button disabled={page >= result.meta.last_page} onClick={() => setPage(page + 1)} className="btn-secondary">
                 Следваща →
               </button>
-            </div>
+            </nav>
           )}
         </>
       )}
     </main>
+  );
+}
+
+// useSearchParams изисква Suspense в Next.js
+export default function ToolsPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <ToolsList />
+    </Suspense>
   );
 }

@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/*
+ * Дизайн система: изчистен, светъл интерфейс с индиго акцент.
+ * Цветовете са подбрани с контраст поне 4.5:1 (WCAG AA) за текст върху фона.
+ */
 :root {
-  --background: #f3f4f6;
-  --foreground: #171717;
+  --background: #f8fafc; /* slate-50 */
+  --foreground: #0f172a; /* slate-900 */
 }
 
 @theme inline {
@@ -15,5 +19,44 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter-sans), system-ui, sans-serif;
+}
+
+/* Видим фокус при навигация с клавиатура (достъпност) */
+:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+/* Общи класове за бутони и полета (Tailwind v4: @utility може да се използва и с @apply) */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 bg-indigo-600 text-white hover:bg-indigo-700;
+}
+@utility btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+}
+@utility btn-danger {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 bg-red-600 text-white hover:bg-red-700;
+}
+@utility btn-success {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 bg-emerald-600 text-white hover:bg-emerald-700;
+}
+@utility btn-sm {
+  /* "!" = важи с предимство пред размера от .btn */
+  @apply px-3! py-1.5! text-xs!;
+}
+@utility input {
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium text-slate-700;
+}
+@utility page {
+  @apply mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8;
+}
+@utility page-title {
+  @apply text-2xl font-semibold tracking-tight text-slate-900;
 }

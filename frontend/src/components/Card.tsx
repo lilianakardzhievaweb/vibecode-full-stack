@@ -7,10 +7,10 @@ type Props = {
   className?: string;
 };
 
-// Бяла карта със сянка. Използва се за менюта, списъци и форми.
+// Бяла карта с рамка. Използва се за менюта, списъци и форми.
 export default function Card({ children, href, className = "" }: Props) {
-  const classes = `block bg-white rounded-lg shadow p-4 text-gray-900 ${
-    href ? "hover:ring-2 hover:ring-blue-500" : ""
+  const classes = `block rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:p-5 ${
+    href ? "transition hover:border-indigo-300 hover:shadow-md" : ""
   } ${className}`;
 
   return href ? (
