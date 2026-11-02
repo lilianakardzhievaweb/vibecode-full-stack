@@ -14,7 +14,7 @@ class RoleSeeder extends Seeder
             'owner' => 'Owner',
             'backend' => 'Backend Developer',
             'frontend' => 'Frontend Developer',
-            'pm' => 'Product Manager',
+            'pm' => 'Project Manager',
             'qa' => 'QA',
             'designer' => 'Designer',
             'data-scientist' => 'Data Scientist',

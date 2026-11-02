@@ -7,14 +7,25 @@ use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
+    /**
+     * Тестови акаунти - по един за всяка роля. Паролата на всички е "password".
+     * Имейлът е <роля>@example.com, напр. owner@example.com (администратор).
+     */
+    public const TEST_USERS = [
+        'owner' => 'Мария Иванова',
+        'backend' => 'Георги Петров',
+        'frontend' => 'Елена Димитрова',
+        'pm' => 'Николай Стоянов',
+        'qa' => 'Ивана Георгиева',
+        'designer' => 'Петя Николова',
+    ];
+
     public function run(): void
     {
-        $roles = ['owner', 'backend', 'frontend', 'pm', 'qa', 'designer'];
-
-        foreach ($roles as $role) {
+        foreach (self::TEST_USERS as $role => $name) {
             User::updateOrCreate(
                 ['email' => "$role@example.com"],
-                ['name' => ucfirst($role), 'password' => 'password', 'role' => $role]
+                ['name' => $name, 'password' => 'password', 'role' => $role]
             );
         }
 
@@ -22,6 +33,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             CategorySeeder::class,
             ToolSeeder::class,
+            FeedbackSeeder::class,
         ]);
     }
 }

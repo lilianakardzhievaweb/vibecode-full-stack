@@ -1,69 +1,81 @@
 #!/bin/bash
-echo "🚀 Starting full-stack development environment..."
+# Стартира целия проект: Docker контейнери, зависимости, база данни и тестови данни.
+# Употреба:  ./start.sh          - нормално стартиране
+#            ./start.sh --seed   - зарежда отново тестовите данни (акаунти, инструменти)
 
-# Check if Docker is running
+cd "$(dirname "$0")" || exit 1
+
+MYSQL_PASSWORD="vibecode-full-stack-starter-kit_mysql_pass"
+SEED_FLAG="backend/storage/app/.seeded"
+
+echo "🚀 Стартиране на AI Tools Hub..."
+
 if ! docker ps &>/dev/null; then
-    echo "❌ Docker is not running. Please start Docker first."
+    echo "❌ Docker не работи. Стартирайте Docker Desktop и опитайте отново."
     exit 1
 fi
 
-# Build PHP image if needed
-echo "📦 Building PHP Laravel image..."
-docker compose build php_fpm
-
-# Start all services
-echo "🔄 Starting all services..."
-docker compose up -d
-
-# Wait for services to be ready
-echo "⏳ Waiting for services to start..."
-sleep 15
-
-# Check if Laravel needs setup
-if [ ! -f backend/.env ] || ! grep -q "APP_KEY=base64:" backend/.env; then
-    echo "🔧 Setting up Laravel..."
-    
-    # Generate application key
-    docker compose exec -T php_fpm php artisan key:generate --force || echo "⚠️  Key generation failed, continuing..."
-    
-    # Install composer dependencies if vendor doesn't exist
-    if [ ! -d "backend/vendor" ]; then
-        echo "📦 Installing Composer dependencies..."
-        docker compose exec -T php_fpm composer install --no-interaction --prefer-dist --optimize-autoloader || echo "⚠️  Composer install failed, continuing..."
-    fi
-    
-    # Run migrations
-    echo "🗄️ Running database migrations..."
-    docker compose exec -T php_fpm php artisan migrate --force || echo "⚠️  Migrations failed, continuing..."
-    
-    # Cache configurations
-    docker compose exec -T php_fpm php artisan config:cache || echo "⚠️  Config cache failed, continuing..."
-    docker compose exec -T php_fpm php artisan route:cache || echo "⚠️  Route cache failed, continuing..."
-    
-    # Set proper permissions
-    docker compose exec -T php_fpm chown -R laravel:laravel /var/www/html/storage || echo "⚠️  Permission setup failed, continuing..."
-    docker compose exec -T php_fpm chown -R laravel:laravel /var/www/html/bootstrap/cache || echo "⚠️  Permission setup failed, continuing..."
+# 1. Настройки на Laravel (създава се само първия път)
+if [ ! -f backend/.env ]; then
+    echo "📝 Създаване на backend/.env от backend/.env.example..."
+    cp backend/.env.example backend/.env
 fi
 
-echo "✅ Development environment started!"
-echo ""
-echo "📊 Service Status:"
-docker compose ps
+# 2. Контейнери
+echo "🐳 Стартиране на контейнерите..."
+docker compose up -d --build || exit 1
+
+# 3. Изчакваме MySQL да е готова (до 90 секунди)
+echo "⏳ Изчакване на базата данни..."
+for i in $(seq 1 45); do
+    if docker compose exec -T mysql mysqladmin ping -uroot -p"$MYSQL_PASSWORD" --silent &>/dev/null; then
+        break
+    fi
+    sleep 2
+done
+
+# 4. Права за папките, в които Laravel пише (логове, кеш, качени снимки)
+docker compose exec -T -u root php_fpm chown -R laravel:laravel /var/www/html/storage /var/www/html/bootstrap/cache
+
+# 5. PHP пакети
+if [ ! -f backend/vendor/autoload.php ]; then
+    echo "📦 Инсталиране на Composer пакетите (1-2 минути)..."
+    docker compose exec -T php_fpm composer install --no-interaction --prefer-dist || exit 1
+fi
+
+# 6. Таен ключ на приложението
+if ! grep -q "^APP_KEY=base64:" backend/.env; then
+    echo "🔑 Генериране на APP_KEY..."
+    docker compose exec -T php_fpm php artisan key:generate --force
+fi
+
+# 7. Таблици в базата и връзка към качените снимки
+echo "🗄️  Миграции..."
+docker compose exec -T php_fpm php artisan migrate --force || exit 1
+docker compose exec -T php_fpm php artisan storage:link &>/dev/null || true
+
+# 8. Тестови данни - първия път или при ./start.sh --seed
+if [ ! -f "$SEED_FLAG" ] || [ "$1" == "--seed" ]; then
+    echo "🌱 Зареждане на тестови данни..."
+    docker compose exec -T php_fpm php artisan db:seed --force && touch "$SEED_FLAG"
+fi
+
+# 9. Изчистваме стар кеш на настройките (в разработка не кешираме config/routes)
+docker compose exec -T php_fpm php artisan optimize:clear &>/dev/null
 
 echo ""
-echo "🌐 Access URLs:"
-# Note: If URLs below show wrong ports, check actual ports with: docker compose ps
-FRONTEND_PORT=$(grep "FRONTEND_PORT" docker-compose.yml | head -1 | sed 's/.*"\([0-9]*\):.*/\1/')
-BACKEND_PORT=$(grep "BACKEND_PORT" docker-compose.yml | head -1 | sed 's/.*"\([0-9]*\):.*/\1/')
-
-echo "  Frontend (Next.js): http://localhost:${FRONTEND_PORT:-8200}"
-echo "  Backend (Laravel): http://localhost:${BACKEND_PORT:-8201}"
-echo "  API Status: http://localhost:${BACKEND_PORT:-8201}/api/status"
+echo "✅ Готово!"
 echo ""
-echo "💡 To verify actual ports, run: docker compose ps"
+echo "🌐 Frontend:  http://localhost:8200   (Next.js стартира за ~30 сек. при първо пускане)"
+echo "🔧 Backend:   http://localhost:8201"
 echo ""
-echo "📋 Useful commands:"
-echo "  docker compose logs -f          # View logs"
-echo "  docker compose ps               # Check status"
-echo "  docker compose down             # Stop services"
-echo "  ./laravel-setup.sh              # Initialize Laravel fully"
+echo "👤 Тестови акаунти (парола: password):"
+echo "   owner@example.com     - Owner (администратор, админ панел)"
+echo "   backend@example.com   frontend@example.com   pm@example.com"
+echo "   qa@example.com        designer@example.com"
+echo ""
+echo "📋 Полезни команди:"
+echo "   docker compose ps                              # статус"
+echo "   docker compose logs -f frontend                # логове на Next.js"
+echo "   docker compose exec php_fpm php artisan test   # тестове"
+echo "   ./stop.sh                                      # спиране"

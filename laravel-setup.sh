@@ -1,42 +1,38 @@
 #!/bin/bash
-echo "🔧 Full Laravel initialization..."
+# Пълна (повторна) инициализация на Laravel: пакети, ключ, миграции, тестови данни, кеш.
+# Контейнерите трябва да са пуснати (./start.sh).
 
-# Check if services are running
+cd "$(dirname "$0")" || exit 1
+
 if ! docker compose ps | grep -q "Up"; then
-    echo "❌ Services not running. Please run ./start.sh first"
+    echo "❌ Контейнерите не работят. Първо пуснете ./start.sh"
     exit 1
 fi
 
-# Install Composer dependencies
-echo "📦 Installing Composer dependencies..."
+[ -f backend/.env ] || cp backend/.env.example backend/.env
+
+echo "🔒 Права за storage и bootstrap/cache..."
+docker compose exec -T -u root php_fpm chown -R laravel:laravel /var/www/html/storage /var/www/html/bootstrap/cache
+
+echo "📦 Composer пакети..."
 docker compose exec php_fpm composer install --no-interaction
 
-# Generate application key
-echo "🔑 Generating application key..."
-docker compose exec php_fpm php artisan key:generate
-
-# Run database migrations
-echo "🗄️ Running database migrations..."
-docker compose exec php_fpm php artisan migrate --force
-
-# Seed database (optional)
-read -p "🌱 Do you want to seed the database? (y/n): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    docker compose exec php_fpm php artisan db:seed
+if ! grep -q "^APP_KEY=base64:" backend/.env; then
+    echo "🔑 Генериране на APP_KEY..."
+    docker compose exec php_fpm php artisan key:generate
 fi
 
-# Clear and cache configurations
-echo "🧹 Optimizing Laravel..."
-docker compose exec php_fpm php artisan config:clear
-docker compose exec php_fpm php artisan route:clear
-docker compose exec php_fpm php artisan view:clear
-docker compose exec php_fpm php artisan config:cache
-docker compose exec php_fpm php artisan route:cache
+echo "🗄️  Миграции..."
+docker compose exec php_fpm php artisan migrate --force
+docker compose exec php_fpm php artisan storage:link 2>/dev/null
 
-# Set proper permissions
-echo "🔒 Setting proper permissions..."
-docker compose exec php_fpm chown -R laravel:laravel /var/www/html/storage
-docker compose exec php_fpm chown -R laravel:laravel /var/www/html/bootstrap/cache
+read -p "🌱 Да заредя ли тестовите данни (акаунти и инструменти)? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    docker compose exec php_fpm php artisan db:seed && touch backend/storage/app/.seeded
+fi
 
-echo "✅ Laravel initialization complete!"
+echo "🧹 Изчистване на кеша..."
+docker compose exec php_fpm php artisan optimize:clear
+
+echo "✅ Laravel е готов!"
