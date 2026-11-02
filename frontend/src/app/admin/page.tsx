@@ -394,7 +394,7 @@ export default function AdminPage() {
         <p className="mt-1 text-sm text-slate-600">Одобрение на предложения, роли на потребителите и история на действията.</p>
       </div>
 
-      <div role="tablist" aria-label="Секции" className="flex gap-1 overflow-x-auto border-b border-slate-200">
+      <div role="tablist" aria-label="Секции" className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200">
         {tabs.map((t) => (
           <button
             key={t.id}
