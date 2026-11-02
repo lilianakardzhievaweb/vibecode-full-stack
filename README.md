@@ -270,6 +270,7 @@ docker compose exec php_fpm php artisan test
 |---|---|
 | Frontend-ът показва „Няма връзка с бекенда“ | `docker compose ps`: всички контейнери трябва да са `Up`. Вижте `docker compose logs php_fpm` |
 | 419 / CSRF грешка при вход | В `backend/.env`: `SANCTUM_STATEFUL_DOMAINS=localhost:8200` и `SESSION_DOMAIN=localhost`, после `docker compose exec php_fpm php artisan optimize:clear` |
+| След `git pull` нова страница дава „route not found“ | Next.js не е видял новите папки (Docker на Windows): `docker compose restart frontend` |
 | Снимките не се показват | `docker compose exec php_fpm php artisan storage:link` |
 | Няма тестови акаунти | `./start.sh --seed` |
 | 2FA кодът се отхвърля | Часът на телефона трябва да е автоматичен (кодът зависи от точното време) |
