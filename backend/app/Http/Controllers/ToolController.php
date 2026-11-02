@@ -6,6 +6,7 @@ use App\Http\Requests\ToolRequest;
 use App\Http\Resources\ToolResource;
 use App\Models\Tag;
 use App\Models\Tool;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -14,15 +15,28 @@ use Illuminate\Support\Str;
 
 class ToolController extends Controller
 {
-    private const RELATIONS = ['user', 'categories', 'roles', 'tags', 'images'];
+    public const RELATIONS = ['user', 'categories', 'roles', 'tags', 'images'];
 
-    // GET /api/tools?search=&role=&category=&tag=
+    // GET /api/tools?search=&role=&category=&tag=&sort=&mine=1
     public function index(Request $request)
     {
-        $query = Tool::with(self::RELATIONS)->latest();
+        $user = $request->user();
+
+        $query = Tool::with(self::RELATIONS)
+            ->visibleTo($user)
+            ->withRatingInfo($user->id);
+
+        // mine=1 - само моите инструменти (за страницата „Профил“), с всички статуси
+        if ($request->boolean('mine')) {
+            $query->where('user_id', $user->id);
+        } else {
+            // В общия списък показваме само одобрените инструменти
+            $query->where('status', Tool::STATUS_APPROVED);
+        }
 
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%'.$request->input('search').'%');
+            $search = '%'.$request->input('search').'%';
+            $query->where(fn ($q) => $q->where('name', 'like', $search)->orWhere('description', 'like', $search));
         }
         if ($request->filled('role')) {
             $query->whereHas('roles', fn ($q) => $q->where('slug', $request->input('role')));
@@ -34,26 +48,51 @@ class ToolController extends Controller
             $query->whereHas('tags', fn ($q) => $q->where('slug', $request->input('tag')));
         }
 
-        return ToolResource::collection($query->paginate(12)->withQueryString());
+        match ($request->input('sort')) {
+            'rating' => $query->orderByDesc('ratings_avg_rating')->orderByDesc('ratings_count'),
+            'name' => $query->orderBy('name'),
+            default => $query->latest(),
+        };
+
+        $perPage = min(max((int) $request->input('per_page', 12), 1), 50);
+
+        return ToolResource::collection($query->paginate($perPage)->withQueryString());
     }
 
     // POST /api/tools
     public function store(ToolRequest $request)
     {
-        $tool = DB::transaction(function () use ($request) {
-            $tool = $request->user()->tools()->create($request->toolData());
+        $user = $request->user();
+
+        $tool = DB::transaction(function () use ($request, $user) {
+            $data = $request->toolData();
+
+            // Инструментите от owner се публикуват веднага, останалите чакат одобрение
+            if ($user->isOwner()) {
+                $data += ['status' => Tool::STATUS_APPROVED, 'reviewed_by' => $user->id, 'reviewed_at' => now()];
+            } else {
+                $data['status'] = Tool::STATUS_PENDING;
+            }
+
+            $tool = $user->tools()->create($data);
             $this->saveRelations($tool, $request);
 
             return $tool;
         });
 
-        return (new ToolResource($tool->load(self::RELATIONS)))->response()->setStatusCode(201);
+        Tool::flushStatsCache();
+        ActivityLogger::log('tool.created', $tool, "Добави инструмента „{$tool->name}“", ['status' => $tool->status]);
+
+        return (new ToolResource($this->loadTool($tool, $user->id)))->response()->setStatusCode(201);
     }
 
     // GET /api/tools/{tool}
-    public function show(Tool $tool)
+    public function show(Request $request, Tool $tool)
     {
-        return new ToolResource($tool->load(self::RELATIONS));
+        // Чакащ или отказан инструмент виждат само авторът и owner. Останалите получават 404.
+        abort_unless($request->user()->can('view', $tool), 404, 'Инструментът не е намерен.');
+
+        return new ToolResource($this->loadTool($tool, $request->user()->id));
     }
 
     // PUT /api/tools/{tool} (при качване на файлове: POST с _method=PUT)
@@ -62,11 +101,21 @@ class ToolController extends Controller
         Gate::authorize('update', $tool);
 
         DB::transaction(function () use ($request, $tool) {
-            $tool->update($request->toolData());
+            $data = $request->toolData();
+
+            // Отказан инструмент, който авторът е поправил, се изпраща отново за одобрение
+            if ($tool->status === Tool::STATUS_REJECTED && ! $request->user()->isOwner()) {
+                $data += ['status' => Tool::STATUS_PENDING, 'rejection_reason' => null, 'reviewed_by' => null, 'reviewed_at' => null];
+            }
+
+            $tool->update($data);
             $this->saveRelations($tool, $request);
         });
 
-        return new ToolResource($tool->load(self::RELATIONS));
+        Tool::flushStatsCache();
+        ActivityLogger::log('tool.updated', $tool, "Редактира инструмента „{$tool->name}“");
+
+        return new ToolResource($this->loadTool($tool, $request->user()->id));
     }
 
     // DELETE /api/tools/{tool}
@@ -79,7 +128,15 @@ class ToolController extends Controller
         }
         $tool->delete();
 
+        ActivityLogger::log('tool.deleted', $tool, "Изтри инструмента „{$tool->name}“", ['name' => $tool->name]);
+
         return response()->noContent();
+    }
+
+    // Зарежда инструмента наново с всички връзки, рейтинга и броя коментари
+    private function loadTool(Tool $tool, int $userId): Tool
+    {
+        return Tool::with(self::RELATIONS)->withRatingInfo($userId)->findOrFail($tool->id);
     }
 
     // Записва категориите, ролите, таговете и изображенията на инструмента

@@ -74,12 +74,12 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=vibecode-full-stack-starter-kit_redis_pass
       # Laravel specific
-      - APP_NAME="vibecode-full-stack-starter-kit_app"
+      - APP_NAME=AI Tools Hub
       - APP_ENV=local
       - APP_DEBUG=true
       - APP_URL=http://localhost:8201
       - SESSION_DRIVER=redis
-      - CACHE_DRIVER=redis
+      - CACHE_STORE=redis
     restart: unless-stopped
     networks:
       - vibecode-full-stack-starter-kit_network

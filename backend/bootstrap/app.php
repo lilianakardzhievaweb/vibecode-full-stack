@@ -18,9 +18,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
+            // Защита на маршрути според ролята, напр. ->middleware('role:owner')
+            'role' => \App\Http\Middleware\EnsureUserHasRole::class,
         ]);
-
-        //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
